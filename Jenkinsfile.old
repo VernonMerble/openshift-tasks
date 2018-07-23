@@ -1,0 +1,31 @@
+#!groovy
+
+node('maven') {
+  stage('Checkout Source') {
+    git url: 'https://github.com/VernonMerble/openshift-tasks.git'
+  }
+
+  stage('Build war') {
+    echo "Building war file"
+    sh "mvn clean package -DskipTests"
+  }
+
+  stage('Build and Tag OpenShift Image') {
+    echo "Building OpenShift container image"
+    sh "oc start-build tasks --follow --from-file=./target/openshift-tasks.war -n tasks"
+  }
+
+  stage('Deploy image') {
+    echo "Deploying container image"
+
+    sh "oc set image dc/tasks tasks=docker-registry.default.svc:5000/tasks/tasks -n tasks"
+
+    sh "oc delete configmap tasks-config -n tasks --ignore-not-found=true"
+    sh "oc create configmap tasks-config --from-file=./configuration/application-users.properties --from-file=./configuration/application-roles.properties -n tasks"
+  
+    openshiftDeploy depCfg: 'tasks', namespace: 'tasks', verbose: 'false', waitTime: '', waitUnit: 'sec'
+    openshiftVerifyDeployment depCfg: 'tasks', namespace: 'tasks', replicaCount: '1', verbose: 'false', verifyReplicaCount: 'false', waitTime: '', waitUnit: 'sec'
+    openshiftVerifyService namespace: 'tasks', svcName: 'tasks', verbose: 'false'
+  }
+
+}
